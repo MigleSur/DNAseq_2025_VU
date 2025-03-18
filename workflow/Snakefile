@@ -1,0 +1,51 @@
+import os
+
+# List your sample names (without file extension)
+samples = "chr17"
+
+input_path = "/Users/migab/Documents/Personal/Sequencing/I_YFX57683/enrichment_seq/bioinformatics_exercise/"
+  
+output_path = "results"
+
+thread_no = 2
+
+reference_file = "/Users/migab/Downloads/resources_broad_hg38_v0_Homo_sapiens_assembly38.fasta"
+
+rule all:
+    input:
+        vcf = expand("{output}/{sample}.vcf.gz", output=output_path, sample=samples)
+
+rule variant_calling:
+    input:
+        cram = expand("{input}/{{sample}}.cram", input=input_path),
+        cram_index = expand("{input}/{{sample}}.cram.crai", input=input_path)
+    output:
+        vcf = "{output}/{sample}.vcf.gz",
+        vcf_index = "{output}/{sample}.vcf.gz.tbi",
+    params:
+        ref = reference_file,
+        gatk_opts = "--native-pair-hmm-threads 4 ",
+        quality = 20
+    log:
+        "{output}/{sample}.haplotypecaller.log"
+    threads: thread_no
+    conda: "envs/variant_calling.yml"
+    shell:
+        """
+        gatk HaplotypeCaller \
+            -R {params.ref} \
+            -I {input.cram} \
+            -O {output.vcf} \
+            --min-base-quality-score {params.quality} \
+            {params.gatk_opts} \
+            > {log} 2>&1
+        """
+
+rule vep:
+    input: 
+        vcf = "{output}/{sample}.vcf.gz",
+        vcf_index = "{output}/{sample}.vcf.gz.tbi",
+    output:
+        annotated_vcf = "{output}/{sample}_annotated.vcf.gz",
+    conda: "envs/vep.yml"
+    threads: 
