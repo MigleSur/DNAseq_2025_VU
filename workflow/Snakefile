@@ -3,17 +3,22 @@ import os
 # List your sample names (without file extension)
 samples = "chr17"
 
-input_path = "/Users/migab/Documents/Personal/Sequencing/I_YFX57683/enrichment_seq/bioinformatics_exercise/"
+input_path = "[path to the input cram file]"
   
 output_path = "results"
 
 thread_no = 2
 
-reference_file = "/Users/migab/Downloads/resources_broad_hg38_v0_Homo_sapiens_assembly38.fasta"
+reference_file = "[path to the reference file]"
+
+path_to_vep_cache = "[path to vep cache file]"
 
 rule all:
     input:
-        vcf = expand("{output}/{sample}.vcf.gz", output=output_path, sample=samples)
+        vcf = expand("{output}/{sample}.vcf.gz", output=output_path, sample=samples),
+        annotation = expand("{output}/{sample}_annotated.vcf", output=output_path, sample=samples),
+        filtered_vcf = expand("{output}/{sample}_annotated_filtered.vcf", output=output_path, sample=samples),
+
 
 rule variant_calling:
     input:
@@ -46,6 +51,43 @@ rule vep:
         vcf = "{output}/{sample}.vcf.gz",
         vcf_index = "{output}/{sample}.vcf.gz.tbi",
     output:
-        annotated_vcf = "{output}/{sample}_annotated.vcf.gz",
+        annotated_vcf = "{output}/{sample}_annotated.vcf",
     conda: "envs/vep.yml"
-    threads: 
+    params:
+        vcf = "{output}/{sample}.vcf",
+        cache = path_to_vep_cache
+    threads: thread_no
+    shell:
+        """
+            gzip -dkc {input.vcf} > {params.vcf}
+            vep -i {params.vcf} \
+            -o {output.annotated_vcf} \
+            --vcf \
+            --cache  --dir_cache {params.cache} \
+            --af --af_gnomade --af_gnomadg --sift b \
+            --polyphen b --symbol --protein --biotype \
+            --af --variant_class  \
+            --force_overwrite 
+        """
+
+rule filter_vcf:
+    input:
+        annotated_vcf = "{output}/{sample}_annotated.vcf",
+    output:
+        filtered_vcf = "{output}/{sample}_annotated_filtered.vcf",
+    conda: "envs/vep.yml"   
+    shell:
+        """
+            filter_vep \
+            -i {input.annotated_vcf} \
+            -o {output.filtered_vcf} \
+            --vcf \
+            --filter "Consequence match missense_variant or Consequence match stop_gained or Consequence match frameshift_variant" \
+            --filter "gnomADg_AF < 0.05" \
+            --filter "CLIN_SIG match uncertain_significance or CLIN_SIG match pathogenic or CLIN_SIG match likely_pathogenic or CLIN_SIG match risk_factor" \
+            --force_overwrite
+        """
+
+
+
+
